@@ -1,2 +1,6 @@
 streamlit
 openai
+langchain_core
+langchain_community
+langchain
+tenacity
