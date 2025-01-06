@@ -15,6 +15,9 @@ import logging
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
+# Debugging: Print secrets to ensure they are being read correctly
+st.write("Secrets:", st.secrets)
+
 # Initialize OpenAI client with secrets
 openai_api_key = st.secrets["openai"]["api_key"]
 client = OpenAI(api_key=openai_api_key)
@@ -254,3 +257,4 @@ if pdf_file:
             chapter_title = generate_chapter_title(new_chapter)
             st.sidebar.write(f"Chapter Title: {chapter_title}")
             st.write(new_chapter)
+
