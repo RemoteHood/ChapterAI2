@@ -254,4 +254,3 @@ if pdf_file:
             chapter_title = generate_chapter_title(new_chapter)
             st.sidebar.write(f"Chapter Title: {chapter_title}")
             st.write(new_chapter)
-
