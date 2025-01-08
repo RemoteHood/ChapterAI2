@@ -238,20 +238,12 @@ if pdf_file:
 
         st.sidebar.write("PDF processed successfully.")
 
-        # Display overall summary
-        st.sidebar.subheader("Overall Summary")
-        st.sidebar.write(overall_summary)
-
         # Display character list
         st.sidebar.subheader("Characters")
         selected_characters = []
         for char in validated_name_list:
             if st.sidebar.checkbox(char):
                 selected_characters.append(char)
-
-        # Display processed text
-        st.sidebar.subheader("Processed Text")
-        st.sidebar.write(processed_text)
 
         # Genre selection
         st.sidebar.subheader("Select Genres")
@@ -286,6 +278,7 @@ if pdf_file:
                 st.write(new_chapter)
     else:
         st.sidebar.write("File size exceeds 200 MB. Please upload a smaller file.")
+
 
 
 
