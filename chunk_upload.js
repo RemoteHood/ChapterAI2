@@ -1,4 +1,5 @@
 async function uploadChunks(file, chunkSize) {
+    console.log("Starting chunk upload...");
     const totalChunks = Math.ceil(file.size / chunkSize);
     for (let i = 0; i < totalChunks; i++) {
         const start = i * chunkSize;
@@ -16,8 +17,10 @@ async function uploadChunks(file, chunkSize) {
         });
 
         if (!response.ok) {
+            console.error('Chunk upload failed');
             throw new Error('Chunk upload failed');
         }
+        console.log(`Chunk ${i} uploaded successfully`);
     }
     alert('File uploaded successfully!');
 }
@@ -25,6 +28,12 @@ async function uploadChunks(file, chunkSize) {
 document.getElementById('uploadButton').addEventListener('click', () => {
     const fileInput = document.getElementById('fileInput');
     const file = fileInput.files[0];
-    const chunkSize = 1024 * 1024; // 1 MB chunks
-    uploadChunks(file, chunkSize);
+    if (file) {
+        const chunkSize = 1024 * 1024; // 1 MB chunks
+        uploadChunks(file, chunkSize);
+    } else {
+        console.error('No file selected');
+        alert('Please select a file to upload');
+    }
 });
+
