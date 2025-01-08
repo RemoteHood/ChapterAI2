@@ -11,7 +11,7 @@ async function uploadChunks(file, chunkSize) {
         formData.append('chunk_number', i);
         formData.append('total_chunks', totalChunks);
 
-        const response = await fetch('http://localhost:5000/upload', {
+        const response = await fetch('/upload_chunk', {
             method: 'POST',
             body: formData
         });
