@@ -1,7 +1,6 @@
 import streamlit as st
 import os
 import tempfile
-import subprocess
 from openai import OpenAI
 from langchain_core.prompts import ChatPromptTemplate, SystemMessagePromptTemplate, HumanMessagePromptTemplate
 from langchain_community.document_loaders import PyPDFLoader
@@ -208,9 +207,6 @@ def generate_chapter_summary(chapter_text):
     )
     return response.choices[0].message.content
 
-# Start the Flask backend
-flask_process = subprocess.Popen(["python", "flask_app.py"])
-
 # Streamlit UI
 st.title("Chapter Writer")
 
@@ -295,10 +291,6 @@ if os.path.exists(os.path.join(upload_dir, "final_file.pdf")):
             chapter_title = generate_chapter_title(new_chapter)
             st.sidebar.write(f"Chapter Title: {chapter_title}")
             st.write(new_chapter)
-
-# Ensure the Flask process is terminated when the Streamlit app stops
-import atexit
-atexit.register(flask_process.terminate)
 
 
 
