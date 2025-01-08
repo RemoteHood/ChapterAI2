@@ -217,6 +217,74 @@ st.sidebar.title("Chapter Writer")
 if "uploaded_chunks" not in st.session_state:
     st.session_state.uploaded_chunks = {}
 
+# File uploader for PDF
+pdf_file = st.file_uploader("Upload a PDF file", type="pdf")
+
+# Check if the file size is below 200 MB
+if pdf_file:
+    file_size = pdf_file.size
+    if file_size < 200 * 1024 * 1024:  # 200 MB
+        st.sidebar.write("Processing PDF...")
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as temp_file:
+            temp_file.write(pdf_file.getvalue())
+            temp_file_path = temp_file.name
+        summary, processed_text = process_pdf(temp_file_path)
+        potential_names = extract_names_llm(processed_text)
+        validated_names = validate_names_llm(potential_names)
+        validated_name_list = validated_names.split('/n')
+        overall_summary = generate_summary(summary)
+
+        st.sidebar.write("PDF processed successfully.")
+
+        # Display overall summary
+        st.sidebar.subheader("Overall Summary")
+        st.sidebar.write(overall_summary)
+
+        # Display character list
+        st.sidebar.subheader("Characters")
+        selected_characters = []
+        for char in validated_name_list:
+            if st.sidebar.checkbox(char):
+                selected_characters.append(char)
+
+        # Display processed text
+        st.sidebar.subheader("Processed Text")
+        st.sidebar.write(processed_text)
+
+        # Genre selection
+        st.sidebar.subheader("Select Genres")
+        genres = ["Romance", "Mystery", "Thriller", "Crime", "Fantasy", "Science Fiction", "Historical Fiction", "Horror", "Paranormal", "Dystopian", "Adventure", "Humor", "same"]
+        selected_genres = st.sidebar.multiselect("Genres", genres)
+
+        # Generate new chapter button
+        if st.sidebar.button("Generate new chapter"):
+            if not selected_characters:
+                st.sidebar.error("Please select at least one character.")
+            elif not selected_genres:
+                st.sidebar.error("Please select at least one genre.")
+            else:
+                st.sidebar.write("Generating new chapter...")
+                new_chapter = generate_chapter(selected_characters, selected_genres, processed_text, overall_summary)
+                chapter_title = generate_chapter_title(new_chapter)
+                st.sidebar.write(f"Chapter Title: {chapter_title}")
+                st.write(new_chapter)
+
+        # Generate next chapter button
+        if st.sidebar.button("Generate next chapter"):
+            if not selected_characters:
+                st.sidebar.error("Please select at least one character.")
+            elif not selected_genres:
+                st.sidebar.error("Please select at least one genre.")
+            else:
+                st.sidebar.write("Generating next chapter...")
+                chapter_summary = generate_chapter_summary(new_chapter)
+                new_chapter = generate_next_chapter(chapter_summary, selected_genres, processed_text, overall_summary)
+                chapter_title = generate_chapter_title(new_chapter)
+                st.sidebar.write(f"Chapter Title: {chapter_title}")
+                st.write(new_chapter)
+    else:
+        st.sidebar.write("File size exceeds 200 MB. Please use the chunked upload method.")
+
 # HTML and JavaScript for chunked uploads
 js_file_path = os.path.join(os.path.dirname(__file__), 'chunk_upload.js')
 with open(js_file_path, 'r') as file:
