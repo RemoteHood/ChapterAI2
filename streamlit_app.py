@@ -11,15 +11,12 @@ import json
 from tenacity import retry, stop_after_attempt, wait_random_exponential
 import logging
 
-# Set up logging
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
-# Initialize OpenAI client with secrets
 openai_api_key = st.secrets["openai"]["api_key"]
 client = OpenAI(api_key=openai_api_key)
 
-# Set up text splitter
 text_splitter = RecursiveCharacterTextSplitter(
     chunk_size=1000,
     chunk_overlap=200,
@@ -173,12 +170,8 @@ def generate_chapter_summary(chapter_text):
     )
     return response.choices[0].message.content
 
-# Streamlit UI
 st.title("Chapter Writer")
 
-# Initialize session state
-if "pdf_file" not in st.session_state:
-    st.session_state.pdf_file = None
 if "pdf_processed" not in st.session_state:
     st.session_state.pdf_processed = False
 if "summary" not in st.session_state:
@@ -194,46 +187,35 @@ if "selected_characters" not in st.session_state:
 if "selected_genres" not in st.session_state:
     st.session_state.selected_genres = []
 
-# File uploader for PDF
 pdf_file = st.file_uploader("Upload a PDF file", type="pdf")
 
-if pdf_file is not None:
-    st.session_state.pdf_file = pdf_file
-    st.session_state.pdf_processed = False
+if pdf_file and not st.session_state.pdf_processed:
+    file_size = pdf_file.size
+    if file_size < 200 * 1024 * 1024:  # 200 MB
+        st.sidebar.write("Processing PDF...")
+        st.session_state.summary, st.session_state.processed_text = process_pdf(pdf_file)
+        st.session_state.potential_names = extract_names_llm(st.session_state.processed_text)
+        st.session_state.validated_names = validate_names_llm(st.session_state.potential_names)
+        st.session_state.validated_name_list = st.session_state.validated_names.split('/n')
+        st.session_state.overall_summary = generate_summary(st.session_state.summary)
+        st.session_state.pdf_processed = True
+        st.sidebar.write("PDF processed successfully.")
 
-# Display character and genre selection only if PDF is uploaded
-if st.session_state.pdf_file is not None:
+if st.session_state.pdf_processed:
     st.sidebar.subheader("Characters")
-    if st.session_state.pdf_processed:
-        for char in st.session_state.validated_name_list:
-            if st.sidebar.checkbox(char, key=char):
-                if char not in st.session_state.selected_characters:
-                    st.session_state.selected_characters.append(char)
-            else:
-                if char in st.session_state.selected_characters:
-                    st.session_state.selected_characters.remove(char)
-    
+    for char in st.session_state.validated_name_list:
+        if st.sidebar.checkbox(char, key=char):
+            if char not in st.session_state.selected_characters:
+                st.session_state.selected_characters.append(char)
+        else:
+            if char in st.session_state.selected_characters:
+                st.session_state.selected_characters.remove(char)
+
     st.sidebar.subheader("Select Genres")
     genres = ["Romance", "Mystery", "Thriller", "Crime", "Fantasy", "Science Fiction", "Historical Fiction", "Horror", "Paranormal", "Dystopian", "Adventure", "Humor", "same"]
     st.session_state.selected_genres = st.sidebar.multiselect("Genres", genres, key="genres")
 
-    # Generate new chapter button
     if st.sidebar.button("Generate new chapter"):
-        if not st.session_state.pdf_processed:
-            st.sidebar.write("Processing PDF...")
-            summary, processed_text = process_pdf(st.session_state.pdf_file)
-            potential_names = extract_names_llm(processed_text)
-            validated_names = validate_names_llm(potential_names)
-            validated_name_list = validated_names.split('/n')
-            overall_summary = generate_summary(summary)
-            
-            st.session_state.summary = summary
-            st.session_state.processed_text = processed_text
-            st.session_state.validated_name_list = validated_name_list
-            st.session_state.overall_summary = overall_summary
-            st.session_state.pdf_processed = True
-            st.sidebar.write("PDF processed successfully.")
-        
         if not st.session_state.selected_characters:
             st.sidebar.error("Please select at least one character.")
         elif not st.session_state.selected_genres:
@@ -245,7 +227,6 @@ if st.session_state.pdf_file is not None:
             st.sidebar.write(f"Chapter Title: {chapter_title}")
             st.write(new_chapter)
 
-    # Generate next chapter button
     if st.sidebar.button("Generate next chapter"):
         if not st.session_state.selected_characters:
             st.sidebar.error("Please select at least one character.")
@@ -258,6 +239,7 @@ if st.session_state.pdf_file is not None:
             chapter_title = generate_chapter_title(new_chapter)
             st.sidebar.write(f"Chapter Title: {chapter_title}")
             st.write(new_chapter)
+
 
 
 
