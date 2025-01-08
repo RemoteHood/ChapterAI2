@@ -221,8 +221,6 @@ st.sidebar.title("Chapter Writer")
 # Initialize session state
 if "uploaded_chunks" not in st.session_state:
     st.session_state.uploaded_chunks = {}
-if "pdf_processed" not in st.session_state:
-    st.session_state.pdf_processed = False
 if "summary" not in st.session_state:
     st.session_state.summary = ""
 if "processed_text" not in st.session_state:
@@ -239,11 +237,14 @@ pdf_file = st.file_uploader("Upload a PDF file", type="pdf")
 if pdf_file:
     file_size = pdf_file.size
     if file_size < 200 * 1024 * 1024:  # 200 MB
-        st.sidebar.write("PDF uploaded successfully.")
-        st.session_state.pdf_file = pdf_file
-        st.session_state.pdf_processed = False
-    else:
-        st.sidebar.write("File size exceeds 200 MB. Please upload a smaller file.")
+        st.sidebar.write("Processing PDF...")
+        st.session_state.summary, st.session_state.processed_text = process_pdf(pdf_file)
+        st.session_state.potential_names = extract_names_llm(st.session_state.processed_text)
+        st.session_state.validated_names = validate_names_llm(st.session_state.potential_names)
+        st.session_state.validated_name_list = st.session_state.validated_names.split('/n')
+        st.session_state.overall_summary = generate_summary(st.session_state.summary)
+
+        st.sidebar.write("PDF processed successfully.")
 
 # Display character list
 st.sidebar.subheader("Characters")
@@ -259,20 +260,6 @@ selected_genres = st.sidebar.multiselect("Genres", genres)
 
 # Generate new chapter button
 if st.sidebar.button("Generate new chapter"):
-    if not st.session_state.pdf_processed:
-        st.sidebar.write("Processing PDF...")
-        summary, processed_text = process_pdf(st.session_state.pdf_file)
-        potential_names = extract_names_llm(processed_text)
-        validated_names = validate_names_llm(potential_names)
-        validated_name_list = validated_names.split('/n')
-        overall_summary = generate_summary(summary)
-
-        st.session_state.pdf_processed = True
-        st.session_state.summary = summary
-        st.session_state.processed_text = processed_text
-        st.session_state.validated_name_list = validated_name_list
-        st.session_state.overall_summary = overall_summary
-
     if not selected_characters:
         st.sidebar.error("Please select at least one character.")
     elif not selected_genres:
