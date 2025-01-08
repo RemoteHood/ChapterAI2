@@ -57,15 +57,24 @@ def process_pdf(pdf_file_path):
         pages = loader.load_and_split()
         docs = text_splitter.split_documents(pages)
         full_text = " ".join([doc.page_content for doc in docs])
-        response = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[
-                {"role": "system", "content": "You are a helpful assistant that summarizes documents."},
-                {"role": "user", "content": f"Please summarize the following document:\n\n{full_text}"}
-            ],
-            max_tokens=1000
-        )
-        summary = response.choices[0].message.content
+
+        # Split the text into smaller chunks to fit within the API limit
+        max_length = 1048576  # Maximum length allowed by the API
+        text_chunks = [full_text[i:i + max_length] for i in range(0, len(full_text), max_length)]
+
+        summaries = []
+        for chunk in text_chunks:
+            response = client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[
+                    {"role": "system", "content": "You are a helpful assistant that summarizes documents."},
+                    {"role": "user", "content": f"Please summarize the following document:\n\n{chunk}"}
+                ],
+                max_tokens=1000
+            )
+            summaries.append(response.choices[0].message.content)
+
+        summary = " ".join(summaries)
         logging.info("Summary generated successfully")
         processed_text = process_text(summary)
         logging.info("Text processed successfully")
@@ -400,6 +409,7 @@ if os.path.exists(os.path.join(upload_dir, "final_file.pdf")):
             chapter_title = generate_chapter_title(new_chapter)
             st.sidebar.write(f"Chapter Title: {chapter_title}")
             st.write(new_chapter)
+
 
 
 
