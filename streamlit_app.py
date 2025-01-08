@@ -37,6 +37,7 @@ def process_pdf(pdf_file):
             # Write the uploaded file content to the temporary file
             temp_file.write(pdf_file.getvalue())
             temp_file_path = temp_file.name
+
         # Load PDF directly from file object
         loader = PyPDFLoader(temp_file_path)
         pages = loader.load_and_split()
@@ -284,82 +285,7 @@ if pdf_file:
                 st.sidebar.write(f"Chapter Title: {chapter_title}")
                 st.write(new_chapter)
     else:
-        st.sidebar.write("File size exceeds 200 MB. Please use the chunked upload method.")
-
-# HTML and JavaScript for chunked uploads
-js_file_path = os.path.join(os.path.dirname(__file__), 'chunk_upload.js')
-with open(js_file_path, 'r') as file:
-    js_content = file.read()
-
-chunk_upload_html = f"""
-<input type="file" id="fileInput">
-<button id="uploadButton">Upload</button>
-<script>
-{js_content}
-</script>
-"""
-
-st.components.v1.html(chunk_upload_html, height=200)
-
-# Check if the final file is combined
-upload_dir = "uploads"
-if os.path.exists(os.path.join(upload_dir, "final_file.pdf")):
-    pdf_file_path = os.path.join(upload_dir, "final_file.pdf")
-    st.sidebar.write("Processing PDF...")
-    summary, processed_text = process_pdf(pdf_file_path)
-    potential_names = extract_names_llm(processed_text)
-    validated_names = validate_names_llm(potential_names)
-    validated_name_list = validated_names.split('/n')
-    overall_summary = generate_summary(summary)
-
-    st.sidebar.write("PDF processed successfully.")
-
-    # Display overall summary
-    st.sidebar.subheader("Overall Summary")
-    st.sidebar.write(overall_summary)
-
-    # Display character list
-    st.sidebar.subheader("Characters")
-    selected_characters = []
-    for char in validated_name_list:
-        if st.sidebar.checkbox(char):
-            selected_characters.append(char)
-
-    # Display processed text
-    st.sidebar.subheader("Processed Text")
-    st.sidebar.write(processed_text)
-
-    # Genre selection
-    st.sidebar.subheader("Select Genres")
-    genres = ["Romance", "Mystery", "Thriller", "Crime", "Fantasy", "Science Fiction", "Historical Fiction", "Horror", "Paranormal", "Dystopian", "Adventure", "Humor", "same"]
-    selected_genres = st.sidebar.multiselect("Genres", genres)
-
-    # Generate new chapter button
-    if st.sidebar.button("Generate new chapter"):
-        if not selected_characters:
-            st.sidebar.error("Please select at least one character.")
-        elif not selected_genres:
-            st.sidebar.error("Please select at least one genre.")
-        else:
-            st.sidebar.write("Generating new chapter...")
-            new_chapter = generate_chapter(selected_characters, selected_genres, processed_text, overall_summary)
-            chapter_title = generate_chapter_title(new_chapter)
-            st.sidebar.write(f"Chapter Title: {chapter_title}")
-            st.write(new_chapter)
-
-    # Generate next chapter button
-    if st.sidebar.button("Generate next chapter"):
-        if not selected_characters:
-            st.sidebar.error("Please select at least one character.")
-        elif not selected_genres:
-            st.sidebar.error("Please select at least one genre.")
-        else:
-            st.sidebar.write("Generating next chapter...")
-            chapter_summary = generate_chapter_summary(new_chapter)
-            new_chapter = generate_next_chapter(chapter_summary, selected_genres, processed_text, overall_summary)
-            chapter_title = generate_chapter_title(new_chapter)
-            st.sidebar.write(f"Chapter Title: {chapter_title}")
-            st.write(new_chapter)
+        st.sidebar.write("File size exceeds 200 MB. Please upload a smaller file.")
 
 
 
