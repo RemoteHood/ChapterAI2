@@ -10,7 +10,6 @@ from langchain.chains.summarize import load_summarize_chain
 import json
 from tenacity import retry, stop_after_attempt, wait_random_exponential
 import logging
-import streamlit.components.v1 as components
 
 # Set up logging
 logging.basicConfig(level=logging.DEBUG)
@@ -31,231 +30,186 @@ text_splitter = RecursiveCharacterTextSplitter(
 def completion_with_backoff(**kwargs):
     return client.chat.completions.create(**kwargs)
 
-def handle_chunked_upload(chunk, chunk_number, total_chunks, upload_dir):
-    chunk_path = os.path.join(upload_dir, f"chunk_{chunk_number}.part")
-    with open(chunk_path, "wb") as chunk_file:
-        chunk_file.write(chunk)
-    st.session_state.uploaded_chunks[chunk_number] = chunk_path
-    if len(st.session_state.uploaded_chunks) == total_chunks:
-        combine_chunks(upload_dir, total_chunks)
-
-def combine_chunks(upload_dir, total_chunks):
-    final_file_path = os.path.join(upload_dir, "final_file.pdf")
-    with open(final_file_path, "wb") as final_file:
-        for i in range(total_chunks):
-            chunk_path = st.session_state.uploaded_chunks[i]
-            with open(chunk_path, "rb") as chunk_file:
-                final_file.write(chunk_file.read())
-            os.remove(chunk_path)
-    st.success("File uploaded and combined successfully!")
-    st.session_state.uploaded_chunks = {}
-    return final_file_path
-
-def process_pdf(pdf_file_path):
+def process_pdf(pdf_file):
     try:
-        loader = PyPDFLoader(pdf_file_path)
+        # Create a temporary file
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as temp_file:
+            # Write the uploaded file content to the temporary file
+            temp_file.write(pdf_file.getvalue())
+            temp_file_path = temp_file.name
+        # Load PDF directly from file object
+        loader = PyPDFLoader(temp_file_path)
         pages = loader.load_and_split()
+
+        # Split the document into chunks
         docs = text_splitter.split_documents(pages)
+
+        # Combine all text from docs
         full_text = " ".join([doc.page_content for doc in docs])
 
-        # Split the text into smaller chunks to fit within the API limit
-        max_length = 1048576  # Maximum length allowed by the API
-        text_chunks = [full_text[i:i + max_length] for i in range(0, len(full_text), max_length)]
+        # Summarize the document using OpenAI API
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",  # Using the specified model
+            messages=[
+                {"role": "system", "content": "You are a helpful assistant that summarizes documents."},
+                {"role": "user", "content": f"Please summarize the following document:\n\n{full_text}"}
+            ],
+            max_tokens=1000  # Adjust as needed
+        )
 
-        summaries = []
-        for chunk in text_chunks:
-            response = client.chat.completions.create(
-                model="gpt-4o-mini",
-                messages=[
-                    {"role": "system", "content": "You are a helpful assistant that summarizes documents."},
-                    {"role": "user", "content": f"Please summarize the following document:\n\n{chunk}"}
-                ],
-                max_tokens=1000
-            )
-            summaries.append(response.choices[0].message.content)
+        summary = response.choices[0].message.content
 
-        summary = " ".join(summaries)
         logging.info("Summary generated successfully")
-        processed_text = process_text(summary)
-        logging.info("Text processed successfully")
+
+        # Process for character names and other details
+        try:
+            processed_text = process_text(summary)
+            logging.info("Text processed successfully")
+        except Exception as e:
+            logging.error(f"Error in process_text: {str(e)}")
+            raise
+
+        # Log the response from the OpenAI API
         logger.debug("OpenAI API Response: %s", summary)
-        os.unlink(pdf_file_path)
+
+        # Don't forget to remove the temporary file
+        os.unlink(temp_file_path)
+
         return summary, processed_text
     except Exception as e:
         logging.error(f"Error processing PDF: {str(e)}")
-        st.error(f"Error processing PDF: {str(e)}")
         raise
 
 def process_text(text):
-    try:
-        response = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[
-                {"role": "system", "content": "You are an expert in literary analysis."},
-                {"role": "user", "content": f"""Analyze the following text from a novel and provide:
-                1. A brief summary (2-3 sentences)
-                2. Key events (bullet points)
-                3. Character mentions
-                4. Any notable time references
+    response = client.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=[
+            {"role": "system", "content": "You are an expert in literary analysis."},
+            {"role": "user", "content": f"""Analyze the following text from a novel and provide:
+            1. A brief summary (2-3 sentences)
+            2. Key events (bullet points)
+            3. Character mentions
+            4. Any notable time references
 
-                Text: {text}"""}
-            ]
-        )
-        return response.choices[0].message.content
-    except Exception as e:
-        logging.error(f"Error processing text: {str(e)}")
-        st.error(f"Error processing text: {str(e)}")
-        raise
+            Text: {text}"""}
+        ]
+    )
+    return response.choices[0].message.content
 
 def extract_names_llm(processed_text):
-    try:
-        response = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[
-                {"role": "system", "content": "You are an expert in literary analysis and character identification."},
-                {"role": "user", "content": f"I have a text and I need your assistance in identifying all the characters from the text. The names should be presented in a clear and organized list. Here is the text: {processed_text}."}
-            ]
-        )
-        return response.choices[0].message.content
-    except Exception as e:
-        logging.error(f"Error extracting names: {str(e)}")
-        st.error(f"Error extracting names: {str(e)}")
-        raise
+    response = client.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=[
+            {"role": "system", "content": "You are an expert in literary analysis and character identification."},
+            {"role": "user", "content": f"I have a text and I need your assistance in identifying all the characters from the text. The names should be presented in a clear and organized list. Here is the text: {processed_text}."}
+        ]
+    )
+    return response.choices[0].message.content
 
 def validate_names_llm(names):
-    try:
-        response = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[
-                {"role": "system", "content": "You are an expert in verifying and simplifying character names in literature."},
-                {"role": "user", "content": f"""Here is the list of character names: {names}. Please provide me with a clear and simplified version of this list without writing anything before or after the names. Put this separation "/n" between full names."""}
-            ]
-        )
-        return response.choices[0].message.content
-    except Exception as e:
-        logging.error(f"Error validating names: {str(e)}")
-        st.error(f"Error validating names: {str(e)}")
-        raise
+    response = client.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=[
+            {"role": "system", "content": "You are an expert in verifying and simplifying character names in literature."},
+            {"role": "user", "content": f"""Here is the list of character names: {names}. Please provide me with a clear and simplified version of this list without writing anything before or after the names. Put this separation "/n" between full names."""}
+        ]
+    )
+    return response.choices[0].message.content
 
 def generate_summary(text):
-    try:
-        response = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[
-                {"role": "system", "content": "You are a helpful assistant skilled in analyzing novels."},
-                {"role": "user", "content": f"""Analyze the following processed information from the beginning of a novel and provide:
-                1. An overall summary of the story so far (5-7 sentences)
-                2. Main themes and motifs identified
-                3. The author's writing style and narrative techniques
+    response = client.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=[
+            {"role": "system", "content": "You are a helpful assistant skilled in analyzing novels."},
+            {"role": "user", "content": f"""Analyze the following processed information from the beginning of a novel and provide:
+            1. An overall summary of the story so far (5-7 sentences)
+            2. Main themes and motifs identified
+            3. The author's writing style and narrative techniques
 
-                Processed information:
-                {text}"""}
-            ]
-        )
-        return response.choices[0].message.content
-    except Exception as e:
-        logging.error(f"Error generating summary: {str(e)}")
-        st.error(f"Error generating summary: {str(e)}")
-        raise
+            Processed information:
+            {text}"""}
+        ]
+    )
+    return response.choices[0].message.content
 
 def generate_chapter_title(chapter_content):
-    try:
-        response = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[
-                {"role": "system", "content": "You are an expert in creating engaging chapter titles for novels."},
-                {"role": "user", "content": f"""Given the following chapter content, generate an appropriate and engaging title for this chapter. The title should be concise (no more than 10 words) and reflect the main theme or event of the chapter.
+    response = client.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=[
+            {"role": "system", "content": "You are an expert in creating engaging chapter titles for novels."},
+            {"role": "user", "content": f"""Given the following chapter content, generate an appropriate and engaging title for this chapter. The title should be concise (no more than 10 words) and reflect the main theme or event of the chapter.
 
-                Chapter content:
-                {chapter_content}
+            Chapter content:
+            {chapter_content}
 
-                Please provide only the title, without any additional text or explanation."""}
-            ]
-        )
-        return response.choices[0].message.content
-    except Exception as e:
-        logging.error(f"Error generating chapter title: {str(e)}")
-        st.error(f"Error generating chapter title: {str(e)}")
-        raise
+            Please provide only the title, without any additional text or explanation."""}
+        ]
+    )
+    return response.choices[0].message.content
 
 def generate_chapter(selected_characters, selected_genres, process_text, overall_summary):
-    try:
-        response = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[
-                {"role": "system", "content": "You are a skilled novelist, able to create engaging and well-structured chapters."},
-                {"role": "user", "content": f"""Generate a new chapter of a story that focuses on the following characters: {', '.join(selected_characters)}.
-                The genres of the story should be: {', '.join(selected_genres)}. If one of the genres is 'same', maintain the original style and genre of the author.
+    response = client.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=[
+            {"role": "system", "content": "You are a skilled novelist, able to create engaging and well-structured chapters."},
+            {"role": "user", "content": f"""Generate a new chapter of a story that focuses on the following characters: {', '.join(selected_characters)}.
+            The genres of the story should be: {', '.join(selected_genres)}. If one of the genres is 'same', maintain the original style and genre of the author.
 
-                Follow these guidelines:
-                1. Write a cohesive narrative of about 1500-2000 words.
-                2. Do not include a chapter title or number.
-                3. Ensure the writing style and elements align with the chosen genres.
+            Follow these guidelines:
+            1. Write a cohesive narrative of about 1500-2000 words.
+            2. Do not include a chapter title or number.
+            3. Ensure the writing style and elements align with the chosen genres.
 
-                Here is the processed text and overall summary for context:
-                Processed Text: {process_text}
-                Overall Summary: {overall_summary}
+            Here is the processed text and overall summary for context:
+            Processed Text: {process_text}
+            Overall Summary: {overall_summary}
 
-                Begin the chapter now:"""}
-            ]
-        )
-        return response.choices[0].message.content
-    except Exception as e:
-        logging.error(f"Error generating chapter: {str(e)}")
-        st.error(f"Error generating chapter: {str(e)}")
-        raise
+            Begin the chapter now:"""}
+        ]
+    )
+    return response.choices[0].message.content
 
 def generate_next_chapter(previous_chapter, selected_genres, process_text, overall_summary):
-    try:
-        response = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[
-                {"role": "system", "content": "You are a skilled novelist, able to create engaging and well-structured chapters."},
-                {"role": "user", "content": f"""Generate the next chapter of a story that continues from the following chapter.
-                The genres of the story should be: {', '.join(selected_genres)}. If one of the genres is 'same', maintain the original style and genre of the author.
+    response = client.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=[
+            {"role": "system", "content": "You are a skilled novelist, able to create engaging and well-structured chapters."},
+            {"role": "user", "content": f"""Generate the next chapter of a story that continues from the following chapter.
+            The genres of the story should be: {', '.join(selected_genres)}. If one of the genres is 'same', maintain the original style and genre of the author.
 
-                Follow these guidelines:
-                1. Write a cohesive narrative of about 1500-2000 words.
-                2. Do not include a chapter title or number.
-                3. Ensure the writing style and elements align with the chosen genres.
+            Follow these guidelines:
+            1. Write a cohesive narrative of about 1500-2000 words.
+            2. Do not include a chapter title or number.
+            3. Ensure the writing style and elements align with the chosen genres.
 
-                Here is the previous chapter for context:
-                Previous Chapter: {previous_chapter}
-                Processed Text: {process_text}
-                Overall Summary: {overall_summary}
+            Here is the previous chapter for context:
+            Previous Chapter: {previous_chapter}
+            Processed Text: {process_text}
+            Overall Summary: {overall_summary}
 
-                Begin the next chapter now:"""}
-            ]
-        )
-        return response.choices[0].message.content
-    except Exception as e:
-        logging.error(f"Error generating next chapter: {str(e)}")
-        st.error(f"Error generating next chapter: {str(e)}")
-        raise
+            Begin the next chapter now:"""}
+        ]
+    )
+    return response.choices[0].message.content
 
 def generate_chapter_summary(chapter_text):
-    try:
-        response = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[
-                {"role": "system", "content": "You are a skilled novelist, able to create engaging and well-structured chapters."},
-                {"role": "user", "content": f"""Generate a summary of the following chapter: {chapter_text}.
+    response = client.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=[
+            {"role": "system", "content": "You are a skilled novelist, able to create engaging and well-structured chapters."},
+            {"role": "user", "content": f"""Generate a summary of the following chapter: {chapter_text}.
 
-                Follow these guidelines:
-                1. Write a brief summary (2-3 sentences) of the chapter.
-                2. Include key events and character development.
-                3. Ensure the summary is cohesive and concise.
+            Follow these guidelines:
+            1. Write a brief summary (2-3 sentences) of the chapter.
+            2. Include key events and character development.
+            3. Ensure the summary is cohesive and concise.
 
-                Chapter Text: {chapter_text}
+            Chapter Text: {chapter_text}
 
-                Begin the summary now:"""}
-            ]
-        )
-        return response.choices[0].message.content
-    except Exception as e:
-        logging.error(f"Error generating chapter summary: {str(e)}")
-        st.error(f"Error generating chapter summary: {str(e)}")
-        raise
+            Begin the summary now:"""}
+        ]
+    )
+    return response.choices[0].message.content
 
 # Streamlit UI
 st.title("Chapter Writer")
@@ -275,10 +229,7 @@ if pdf_file:
     file_size = pdf_file.size
     if file_size < 200 * 1024 * 1024:  # 200 MB
         st.sidebar.write("Processing PDF...")
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as temp_file:
-            temp_file.write(pdf_file.getvalue())
-            temp_file_path = temp_file.name
-        summary, processed_text = process_pdf(temp_file_path)
+        summary, processed_text = process_pdf(pdf_file)
         potential_names = extract_names_llm(processed_text)
         validated_names = validate_names_llm(potential_names)
         validated_name_list = validated_names.split('/n')
@@ -348,7 +299,7 @@ chunk_upload_html = f"""
 </script>
 """
 
-components.html(chunk_upload_html, height=200)
+st.components.v1.html(chunk_upload_html, height=200)
 
 # Check if the final file is combined
 upload_dir = "uploads"
