@@ -221,12 +221,14 @@ st.sidebar.title("Chapter Writer")
 # Initialize session state
 if "uploaded_chunks" not in st.session_state:
     st.session_state.uploaded_chunks = {}
-if "selected_characters" not in st.session_state:
-    st.session_state.selected_characters = []
-if "selected_genres" not in st.session_state:
-    st.session_state.selected_genres = []
+if "pdf_processed" not in st.session_state:
+    st.session_state.pdf_processed = False
+if "summary" not in st.session_state:
+    st.session_state.summary = ""
 if "processed_text" not in st.session_state:
     st.session_state.processed_text = ""
+if "validated_name_list" not in st.session_state:
+    st.session_state.validated_name_list = []
 if "overall_summary" not in st.session_state:
     st.session_state.overall_summary = ""
 
@@ -237,61 +239,64 @@ pdf_file = st.file_uploader("Upload a PDF file", type="pdf")
 if pdf_file:
     file_size = pdf_file.size
     if file_size < 200 * 1024 * 1024:  # 200 MB
+        st.sidebar.write("PDF uploaded successfully.")
+        st.session_state.pdf_file = pdf_file
+        st.session_state.pdf_processed = False
+    else:
+        st.sidebar.write("File size exceeds 200 MB. Please upload a smaller file.")
+
+# Display character list
+st.sidebar.subheader("Characters")
+selected_characters = []
+for char in st.session_state.validated_name_list:
+    if st.sidebar.checkbox(char):
+        selected_characters.append(char)
+
+# Genre selection
+st.sidebar.subheader("Select Genres")
+genres = ["Romance", "Mystery", "Thriller", "Crime", "Fantasy", "Science Fiction", "Historical Fiction", "Horror", "Paranormal", "Dystopian", "Adventure", "Humor", "same"]
+selected_genres = st.sidebar.multiselect("Genres", genres)
+
+# Generate new chapter button
+if st.sidebar.button("Generate new chapter"):
+    if not st.session_state.pdf_processed:
         st.sidebar.write("Processing PDF...")
-        summary, processed_text = process_pdf(pdf_file)
+        summary, processed_text = process_pdf(st.session_state.pdf_file)
         potential_names = extract_names_llm(processed_text)
         validated_names = validate_names_llm(potential_names)
         validated_name_list = validated_names.split('/n')
         overall_summary = generate_summary(summary)
 
+        st.session_state.pdf_processed = True
+        st.session_state.summary = summary
         st.session_state.processed_text = processed_text
+        st.session_state.validated_name_list = validated_name_list
         st.session_state.overall_summary = overall_summary
 
-        st.sidebar.write("PDF processed successfully.")
-
-        # Display character list
-        st.sidebar.subheader("Characters")
-        for char in validated_name_list:
-            if st.sidebar.checkbox(char):
-                if char not in st.session_state.selected_characters:
-                    st.session_state.selected_characters.append(char)
-            else:
-                if char in st.session_state.selected_characters:
-                    st.session_state.selected_characters.remove(char)
-
-        # Genre selection
-        st.sidebar.subheader("Select Genres")
-        genres = ["Romance", "Mystery", "Thriller", "Crime", "Fantasy", "Science Fiction", "Historical Fiction", "Horror", "Paranormal", "Dystopian", "Adventure", "Humor", "same"]
-        st.session_state.selected_genres = st.sidebar.multiselect("Genres", genres)
-
-        # Generate new chapter button
-        if st.sidebar.button("Generate new chapter"):
-            if not st.session_state.selected_characters:
-                st.sidebar.error("Please select at least one character.")
-            elif not st.session_state.selected_genres:
-                st.sidebar.error("Please select at least one genre.")
-            else:
-                st.sidebar.write("Generating new chapter...")
-                new_chapter = generate_chapter(st.session_state.selected_characters, st.session_state.selected_genres, st.session_state.processed_text, st.session_state.overall_summary)
-                chapter_title = generate_chapter_title(new_chapter)
-                st.sidebar.write(f"Chapter Title: {chapter_title}")
-                st.write(new_chapter)
-
-        # Generate next chapter button
-        if st.sidebar.button("Generate next chapter"):
-            if not st.session_state.selected_characters:
-                st.sidebar.error("Please select at least one character.")
-            elif not st.session_state.selected_genres:
-                st.sidebar.error("Please select at least one genre.")
-            else:
-                st.sidebar.write("Generating next chapter...")
-                chapter_summary = generate_chapter_summary(new_chapter)
-                new_chapter = generate_next_chapter(chapter_summary, st.session_state.selected_genres, st.session_state.processed_text, st.session_state.overall_summary)
-                chapter_title = generate_chapter_title(new_chapter)
-                st.sidebar.write(f"Chapter Title: {chapter_title}")
-                st.write(new_chapter)
+    if not selected_characters:
+        st.sidebar.error("Please select at least one character.")
+    elif not selected_genres:
+        st.sidebar.error("Please select at least one genre.")
     else:
-        st.sidebar.write("File size exceeds 200 MB. Please upload a smaller file.")
+        st.sidebar.write("Generating new chapter...")
+        new_chapter = generate_chapter(selected_characters, selected_genres, st.session_state.processed_text, st.session_state.overall_summary)
+        chapter_title = generate_chapter_title(new_chapter)
+        st.sidebar.write(f"Chapter Title: {chapter_title}")
+        st.write(new_chapter)
+
+# Generate next chapter button
+if st.sidebar.button("Generate next chapter"):
+    if not selected_characters:
+        st.sidebar.error("Please select at least one character.")
+    elif not selected_genres:
+        st.sidebar.error("Please select at least one genre.")
+    else:
+        st.sidebar.write("Generating next chapter...")
+        chapter_summary = generate_chapter_summary(new_chapter)
+        new_chapter = generate_next_chapter(chapter_summary, selected_genres, st.session_state.processed_text, st.session_state.overall_summary)
+        chapter_title = generate_chapter_title(new_chapter)
+        st.sidebar.write(f"Chapter Title: {chapter_title}")
+        st.write(new_chapter)
 
 
 
