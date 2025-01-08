@@ -10,6 +10,7 @@ from langchain.chains.summarize import load_summarize_chain
 import json
 from tenacity import retry, stop_after_attempt, wait_random_exponential
 import logging
+import streamlit.components.v1 as components
 
 # Set up logging
 logging.basicConfig(level=logging.DEBUG)
@@ -30,12 +31,29 @@ text_splitter = RecursiveCharacterTextSplitter(
 def completion_with_backoff(**kwargs):
     return client.chat.completions.create(**kwargs)
 
-def process_pdf(pdf_file):
+def handle_chunked_upload(chunk, chunk_number, total_chunks, upload_dir):
+    chunk_path = os.path.join(upload_dir, f"chunk_{chunk_number}.part")
+    with open(chunk_path, "wb") as chunk_file:
+        chunk_file.write(chunk)
+    st.session_state.uploaded_chunks[chunk_number] = chunk_path
+    if len(st.session_state.uploaded_chunks) == total_chunks:
+        combine_chunks(upload_dir, total_chunks)
+
+def combine_chunks(upload_dir, total_chunks):
+    final_file_path = os.path.join(upload_dir, "final_file.pdf")
+    with open(final_file_path, "wb") as final_file:
+        for i in range(total_chunks):
+            chunk_path = st.session_state.uploaded_chunks[i]
+            with open(chunk_path, "rb") as chunk_file:
+                final_file.write(chunk_file.read())
+            os.remove(chunk_path)
+    st.success("File uploaded and combined successfully!")
+    st.session_state.uploaded_chunks = {}
+    return final_file_path
+
+def process_pdf(pdf_file_path):
     try:
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as temp_file:
-            temp_file.write(pdf_file.getvalue())
-            temp_file_path = temp_file.name
-        loader = PyPDFLoader(temp_file_path)
+        loader = PyPDFLoader(pdf_file_path)
         pages = loader.load_and_split()
         docs = text_splitter.split_documents(pages)
         full_text = " ".join([doc.page_content for doc in docs])
@@ -52,7 +70,7 @@ def process_pdf(pdf_file):
         processed_text = process_text(summary)
         logging.info("Text processed successfully")
         logger.debug("OpenAI API Response: %s", summary)
-        os.unlink(temp_file_path)
+        os.unlink(pdf_file_path)
         return summary, processed_text
     except Exception as e:
         logging.error(f"Error processing PDF: {str(e)}")
@@ -195,12 +213,56 @@ st.title("Chapter Writer")
 # Sidebar for character selection and genre selection
 st.sidebar.title("Chapter Writer")
 
-# File uploader for PDF
-pdf_file = st.file_uploader("Upload a PDF file", type="pdf")
+# Initialize session state
+if "uploaded_chunks" not in st.session_state:
+    st.session_state.uploaded_chunks = {}
 
-if pdf_file:
+# HTML and JavaScript for chunked uploads
+chunk_upload_html = """
+<input type="file" id="fileInput">
+<button id="uploadButton">Upload</button>
+<script>
+async function uploadChunks(file, chunkSize) {
+    const totalChunks = Math.ceil(file.size / chunkSize);
+    for (let i = 0; i < totalChunks; i++) {
+        const start = i * chunkSize;
+        const end = Math.min(start + chunkSize, file.size);
+        const chunk = file.slice(start, end);
+
+        const formData = new FormData();
+        formData.append('chunk', chunk, `chunk_${i}.part`);
+        formData.append('chunk_number', i);
+        formData.append('total_chunks', totalChunks);
+
+        const response = await fetch('http://localhost:5000/upload', {
+            method: 'POST',
+            body: formData
+        });
+
+        if (!response.ok) {
+            throw new Error('Chunk upload failed');
+        }
+    }
+    alert('File uploaded successfully!');
+}
+
+document.getElementById('uploadButton').addEventListener('click', () => {
+    const fileInput = document.getElementById('fileInput');
+    const file = fileInput.files[0];
+    const chunkSize = 1024 * 1024; // 1 MB chunks
+    uploadChunks(file, chunkSize);
+});
+</script>
+"""
+
+components.html(chunk_upload_html, height=200)
+
+# Check if the final file is combined
+upload_dir = "uploads"
+if os.path.exists(os.path.join(upload_dir, "final_file.pdf")):
+    pdf_file_path = os.path.join(upload_dir, "final_file.pdf")
     st.sidebar.write("Processing PDF...")
-    summary, processed_text = process_pdf(pdf_file)
+    summary, processed_text = process_pdf(pdf_file_path)
     potential_names = extract_names_llm(processed_text)
     validated_names = validate_names_llm(potential_names)
     validated_name_list = validated_names.split('/n')
@@ -254,3 +316,4 @@ if pdf_file:
             chapter_title = generate_chapter_title(new_chapter)
             st.sidebar.write(f"Chapter Title: {chapter_title}")
             st.write(new_chapter)
+
